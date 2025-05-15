@@ -44,3 +44,5 @@ def TMM_with_defect(n_layers, d_layers, lambda0, n_in, n_out):
         [1 - n_out / n_layers[-1], 1 + n_out / n_layers[-1]]
     ])
     M = M @ T_last
+    
+    return eigenfunctions, z_positions
