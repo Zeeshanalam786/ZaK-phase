@@ -1,3 +1,6 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
 def TMM_with_defect(n_layers, d_layers, lambda0, n_in, n_out):
     M = np.eye(2, dtype=complex)  # Initialize the transfer matrix
     A, B = 1, 0  # Forward and backward coefficients for the first layer
@@ -45,4 +48,41 @@ def TMM_with_defect(n_layers, d_layers, lambda0, n_in, n_out):
     ])
     M = M @ T_last
     
-    return eigenfunctions, z_positions
+    # Plot real part of electric field
+    plt.figure(1)
+    plt.plot(np.array(z_positions) * 1e9, np.real(eigenfunctions), linewidth=2)
+    plt.xlabel('Length (nm)')
+    plt.ylabel('Ez')
+    plt.grid(True)
+    plt.show()
+    
+    # Normalize and plot electric field intensity
+    E_field_norm = np.abs(eigenfunctions)
+    E_field_norm /= np.max(E_field_norm)
+    
+    plt.figure(2)
+    plt.plot(np.array(z_positions) * 1e9, E_field_norm, linewidth=2)
+    plt.xlabel('Arc Length (nm)')
+    plt.ylabel('Normalized Electric Field Intensity')
+    plt.ylim([0, 1])
+    plt.title('Normalized Electric Field Intensity Along the Arc Length')
+    plt.grid(True)
+    plt.show()
+    
+    return E_field_norm, z_positions
+
+# Define parameters
+No_of_repetitions = 4
+n1, n2 = 3.48, 1.45
+d1, d2, d3, d4 = 350e-9, 220e-9, 115e-9, 275e-9
+
+n_layers = [n1, n2, n1, n2, n1, n2, n1, n2, n2, n1, n2, n1, n2, n1, n2, n1]
+d_layers = [d1, d2, d1, d2, d1, d2, d1, d2, d4, d3, d4, d3, d4, d3, d4, d3]
+S = sum(d_layers)
+print(f"Total thickness: {S:.2e} m")
+
+lambda0 = 1519.46e-9  # Wavelength of the topological edge state
+n_in, n_out = 3.48, 3.48
+
+# Run the function
+E_field_norm, z_positions = TMM_with_defect(n_layers, d_layers, lambda0, n_in, n_out)
