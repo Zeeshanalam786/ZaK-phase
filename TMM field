@@ -1,1 +1,46 @@
-
+def TMM_with_defect(n_layers, d_layers, lambda0, n_in, n_out):
+    M = np.eye(2, dtype=complex)  # Initialize the transfer matrix
+    A, B = 1, 0  # Forward and backward coefficients for the first layer
+    E_field = np.array([A, B], dtype=complex)
+    
+    eigenfunctions = []  # Store electric field values across layers
+    z_positions = []  # Store position values across layers
+    total_thickness = 0  # Track cumulative thickness
+    
+    for i in range(len(n_layers)):
+        n, d = n_layers[i], d_layers[i]
+        k = 2 * np.pi * n / lambda0  # Wavenumber inside the layer
+        
+        # Compute phase shift for propagation
+        phi = k * d
+        P = np.array([[np.exp(1j * phi), 0], [0, np.exp(-1j * phi)]])  # Propagation matrix
+        
+        # Interface matrix
+        n_prev = n_in if i == 0 else n_layers[i - 1]
+        rho = (n_prev - n) / (n + n_prev)
+        tau = 2 * n_prev / (n + n_prev)
+        T_interface = (1 / tau) * np.array([[1, rho], [rho, 1]])
+        
+        # Update total transfer matrix and electric field
+        M = M @ T_interface @ P
+        E_field = T_interface @ E_field
+        
+        # Calculate electric field within the layer
+        z_layer = np.linspace(total_thickness, total_thickness + d, 1000)
+        E_layer = (E_field[0] * np.exp(1j * k * (z_layer - total_thickness)) +
+                   E_field[1] * np.exp(-1j * k * (z_layer - total_thickness)))
+        
+        # Store field values and positions
+        eigenfunctions.extend(E_layer)
+        z_positions.extend(z_layer)
+        
+        # Update thickness and electric field for next layer
+        total_thickness += d
+        E_field = P @ E_field
+    
+    # Final interface matrix
+    T_last = (1 / (1 + n_out)) * np.array([
+        [1 + n_out / n_layers[-1], 1 - n_out / n_layers[-1]],
+        [1 - n_out / n_layers[-1], 1 + n_out / n_layers[-1]]
+    ])
+    M = M @ T_last
