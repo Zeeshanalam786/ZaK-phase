@@ -1,0 +1,82 @@
+import numpy as np
+
+# Constants
+c = 3e8  # speed of light (m/s)
+n_Si = 3.48
+n_SiO2 = 1.45
+d_Si = 350e-9
+d_SiO2 = 220e-9
+a = d_Si + d_SiO2  # unit cell length
+
+# Spatial grid over one unit cell
+points_per_layer = 500
+z_Si = np.linspace(0, d_Si, points_per_layer, endpoint=False)
+z_SiO2 = np.linspace(d_Si, a, points_per_layer)
+z_unit = np.concatenate((z_Si, z_SiO2))
+
+# Dielectric profile: ε(z) = n(z)^2
+epsilon_z = np.concatenate((np.full(points_per_layer, n_Si**2),
+                            np.full(points_per_layer, n_SiO2**2)))
+
+# Brillouin zone sampling (q-points)
+N_q = 100
+q_vals = np.linspace(-np.pi/a, np.pi/a, N_q)
+
+# Frequency range for band 1
+f_low = 100e12  # 100 THz
+f_high = 200e12  # 200 THz
+
+# Function to compute cos(qA) for given frequency (from transfer matrix)
+def cos_qA(f):
+    k1 = 2 * np.pi * n_Si * f / c
+    k2 = 2 * np.pi * n_SiO2 * f / c
+    Z1 = 1 / n_Si
+    Z2 = 1 / n_SiO2
+    term1 = np.cos(k1 * d_Si) * np.cos(k2 * d_SiO2)
+    term2 = 0.5 * (Z1/Z2 + Z2/Z1) * np.sin(k1 * d_Si) * np.sin(k2 * d_SiO2)
+    return term1 - term2
+
+# Match frequency to q using dispersion relation
+def find_frequency_for_q(q, f1, f2, steps=10000):
+    freqs = np.linspace(f1, f2, steps)
+    for f in freqs:
+        if abs(np.cos(q * a) - cos_qA(f)) < 0.002:
+            return f
+    return None
+
+# Compute periodic part of eigenfunction u_q(z)
+def compute_uqz(f, q):
+    k1 = 2 * np.pi * n_Si * f / c
+    k2 = 2 * np.pi * n_SiO2 * f / c
+    E1 = np.exp(1j * k1 * z_Si)
+    E2 = np.exp(1j * k2 * (z_SiO2 - d_Si))
+    E_field = np.concatenate((E1, E2))
+    u_q = E_field * np.exp(-1j * q * z_unit)
+    norm = np.sqrt(np.trapz(epsilon_z * np.abs(u_q)**2, z_unit))
+    return u_q / norm
+
+# Build eigenfunctions u_q(z) across q
+u_list = []
+for q in q_vals:
+    f_q = find_frequency_for_q(q, f_low, f_high)
+    if f_q is not None:
+        u_list.append(compute_uqz(f_q, q))
+    else:
+        u_list.append(np.zeros_like(z_unit, dtype=complex))
+
+# Zak phase integration (discrete Berry connection)
+zak_integral = 0
+for i in range(1, len(q_vals)):
+    dq = q_vals[i] - q_vals[i-1]
+    u_prev = u_list[i-1]
+    u_curr = u_list[i]
+    du_dq = (u_curr - u_prev) / dq
+    integrand = 1j * np.conj(u_prev) * du_dq * epsilon_z
+    inner = np.trapz(integrand, z_unit)
+    zak_integral += inner * dq
+
+# Output Zak phase in units of π
+zak_phase = np.real(zak_integral)
+zak_phase_pi = zak_phase / np.pi
+
+print(f"Zak Phase (Band 1, PhC1) = {zak_phase_pi:.4f} π")
