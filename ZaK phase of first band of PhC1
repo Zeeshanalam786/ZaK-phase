@@ -1,0 +1,133 @@
+import numpy as np
+
+# Constants
+c = 3e8  # speed of light (m/s)
+n_Si = 3.48
+n_SiO2 = 1.45
+d_Si = 350e-9
+d_SiO2 = 220e-9
+a = d_Si + d_SiO2  # unit cell length
+
+# Spatial grid over one unit cell
+points_per_layer = 500
+z_Si = np.linspace(0, d_Si, points_per_layer, endpoint=False)
+z_SiO2 = np.linspace(d_Si, a, points_per_layer)
+z_unit = np.concatenate((z_Si, z_SiO2))
+
+# Dielectric profile: ε(z) = n(z)^2
+epsilon_z = np.concatenate((np.full(points_per_layer, n_Si**2),
+                            np.full(points_per_layer, n_SiO2**2)))
+
+# Brillouin zone sampling (q-points)
+N_q = 1000
+q_vals = np.linspace(-np.pi/a, np.pi/a, N_q)
+
+# Frequency range for band 1
+f_low = 100e12  # 100 THz
+f_high = 200e12  # 200 THz
+
+# Function to compute cos(qA) for given frequency (from transfer matrix)
+def cos_qA(f):
+    k1 = 2 * np.pi * n_Si * f / c
+    k2 = 2 * np.pi * n_SiO2 * f / c
+    Z1 = 1 / n_Si
+    Z2 = 1 / n_SiO2
+    term1 = np.cos(k1 * d_Si) * np.cos(k2 * d_SiO2)
+    term2 = 0.5 * (Z1/Z2 + Z2/Z1) * np.sin(k1 * d_Si) * np.sin(k2 * d_SiO2)
+    return term1 - term2
+
+# Match frequency to q using dispersion relation
+def find_frequency_for_q(q, f1, f2, steps=1000):
+    freqs = np.linspace(f1, f2, steps)
+    for f in freqs:
+        if abs(np.cos(q * a) - cos_qA(f)) < 0.002:
+            return f
+    return None
+
+# Compute periodic part of eigenfunction u_q(z)
+def TMM_with_defect(n_layers, d_layers, lambda0, n_in, n_out):
+    M = np.eye(2, dtype=complex)  # Initialize the transfer matrix
+    A, B = 1, 0  # Forward and backward coefficients for the first layer
+    E_field = np.array([A, B], dtype=complex)
+    
+    eigenfunctions = []  # Store electric field values across layers
+    z_positions = []  # Store position values across layers
+    total_thickness = 0  # Track cumulative thickness
+    
+    for i in range(len(n_layers)):
+        n, d = n_layers[i], d_layers[i]
+        k = 2 * np.pi * n / lambda0  # Wavenumber inside the layer
+        
+        # Compute phase shift for propagation
+        phi = k * d
+        P = np.array([[np.exp(1j * phi), 0], [0, np.exp(-1j * phi)]])  # Propagation matrix
+        
+        # Interface matrix
+        n_prev = n_in if i == 0 else n_layers[i - 1]
+        rho = (n_prev - n) / (n + n_prev)
+        tau = 2 * n_prev / (n + n_prev)
+        T_interface = (1 / tau) * np.array([[1, rho], [rho, 1]])
+        
+        # Update total transfer matrix and electric field
+        M = M @ T_interface @ P
+        E_field = T_interface @ E_field
+        
+        # Calculate electric field within the layer
+        z_layer = np.linspace(total_thickness, total_thickness + d, 500)
+        E_layer = (E_field[0] * np.exp(1j * k * (z_layer - total_thickness)) +
+                   E_field[1] * np.exp(-1j * k * (z_layer - total_thickness)))
+        
+        # Store field values and positions
+        eigenfunctions.extend(E_layer)
+        z_positions.extend(z_layer)
+        
+        # Update thickness and electric field for next layer
+        total_thickness += d
+        E_field = P @ E_field
+    
+    # Final interface matrix
+    T_last = (1 / (1 + n_out)) * np.array([
+        [1 + n_out / n_layers[-1], 1 - n_out / n_layers[-1]],
+        [1 - n_out / n_layers[-1], 1 + n_out / n_layers[-1]]
+    ])
+    M = M @ T_last
+    
+    return eigenfunctions
+
+No_of_repetitions = 1
+n1, n2 = 3.48, 1.45
+d1, d2 = 350e-9, 220e-9
+
+n_layers = [n1, n2]
+d_layers = [d1, d2]
+S = sum(d_layers)
+lambda0 = 1519.46e-9  # Wavelength of the topological edge state
+#n_in, n_out = 3.48, 3.48
+n_in, n_out = 3.48, 1.45
+# Build eigenfunctions u_q(z) across q
+u_list = []
+for q in q_vals:
+    f_q = find_frequency_for_q(q, f_low, f_high)
+    if f_q is not None:
+        u_list.append(TMM_with_defect(n_layers, d_layers, (3*10**8)/f_q, n_in, n_out))
+    else:
+        u_list.append(np.zeros_like(z_unit, dtype=complex))
+
+# Zak phase integration (discrete Berry connection)
+zak_integral = 0
+for i in range(1, len(q_vals)):
+    dq = q_vals[i] - q_vals[i-1]
+    u_prev = np.array(u_list[i-1])
+    u_curr = np.array(u_list[i])
+    du_dq = (u_curr - u_prev) / dq
+    integrand = 1j * np.conj(u_prev) * du_dq * epsilon_z
+    inner = np.trapz(integrand, z_unit)
+    zak_integral += inner * dq
+
+# Output Zak phase in units of π
+zak_phase = np.real(zak_integral)
+zak_phase_pi = zak_phase / np.pi
+print(u_prev.shape)
+print(du_dq.shape)
+print(epsilon_z.shape)
+print(f"Zak Phase (Band 1, PhC1) = {zak_phase_pi:.4f} π")
