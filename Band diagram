@@ -1,0 +1,63 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Parameters for PhC1 based on the previous paper
+epsilon_a = 3.48**2  # Relative permittivity of Silicon (Si)
+mu_a = 1             # Relative permeability of Silicon
+epsilon_b = 1.45**2  # Relative permittivity of Silicon Dioxide (SiO2)
+mu_b = 1             # Relative permeability of Silicon Dioxide
+
+# Refractive indices of layers
+n_a = np.sqrt(epsilon_a)  # Refractive index of Si
+n_b = np.sqrt(epsilon_b)  # Refractive index of SiO2
+
+# Layer thicknesses (in meters)
+d_a = 350e-9  # Thickness of Si layer in meters
+d_b = 220e-9  # Thickness of SiO2 layer in meters
+Lambda = n_a * d_a + n_b * d_b  # Unit cell length
+
+# Define constants
+c = 3e8  # Speed of light in vacuum (m/s)
+
+# Frequency range and number of points
+neu_min = 0e12    # Minimum frequency in Hz 
+neu_max = 800e12  # Maximum frequency in Hz
+num_frequencies = 10000  # Number of frequency points
+neu_values = np.linspace(neu_min, neu_max, num_frequencies)
+
+# Initialize array to store band structure data
+band_structure = np.zeros(num_frequencies)
+
+# Calculate impedance ratios for layers A and B
+z_a = np.sqrt(mu_a / epsilon_a)  # Impedance of Si
+z_b = np.sqrt(mu_b / epsilon_b)  # Impedance of SiO2
+
+# Loop through each frequency and compute the dispersion relation
+for fi in range(num_frequencies):
+    omega = 2 * np.pi * neu_values[fi]  # Current frequency
+    k_a = omega * n_a / c  # Wave number in Si layer
+    k_b = omega * n_b / c  # Wave number in SiO2 layer
+
+    # Calculate cos(q*Lambda) using the characteristic equation
+    C = np.cos(k_a * d_a) * np.cos(k_b * d_b) - 0.5 * (z_a/z_b + z_b/z_a) * np.sin(k_a * d_a) * np.sin(k_b * d_b)
+
+    # Calculate Bloch wave vector q for this frequency
+    q_Bloch = np.arccos(C) / Lambda  # Only take the real part
+
+    # Store Bloch wave vector values in band structure matrix
+    band_structure[fi] = q_Bloch
+
+# Normalize the wave vectors and convert frequencies to THz for plotting
+normalized_q = np.real(band_structure) * Lambda / (2 * np.pi)  # Normalized wave vector qΛ/2π
+frequency = neu_values * 1e-12  # Convert Hz to THz
+
+# Plot band structure
+plt.figure()
+plt.plot(normalized_q, frequency, label='Band Structure')
+plt.xlabel(r'Normalized Wave Vector ($q\Lambda/2\pi$)')
+plt.ylabel('Frequency (THz)')
+plt.xlim([-0.5, 1.0])  # Updated range
+plt.title('Band Structure of 1D Photonic Crystal (PhC1)')
+plt.grid(True)
+plt.legend()
+plt.show()
